@@ -1,5 +1,3 @@
-using Microsoft.VisualBasic.FileIO;
-
 static class Day01
 {
     public static void Run(TextReader reader)
