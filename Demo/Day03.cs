@@ -12,30 +12,43 @@ static class Day03
     }
 
     private static long GetTwoBatteryRating(this BatteryBank bank) =>
-        long.Parse(bank.GetBatteryRating(string.Empty, 2));
+        bank.SelectBatteries(2).Join();
     
     private static long GetTwelveBatteryRating(this BatteryBank bank) =>
-        long.Parse(bank.GetBatteryRating(string.Empty, 12));
+        bank.SelectBatteries(12).Join();
 
-    private static string GetBatteryRating(this BatteryBank bank, string turnedOn, int remainingSlots)
+    private static long Join(this IEnumerable<Battery> batteries) =>
+        batteries.OrderBy(b => b.Index).Aggregate(0L, (acc, b) => acc * 10 + b.Joltage);
+
+    private static IEnumerable<Battery> SelectBatteries(this BatteryBank bank, int remainingSlots)
     {
-        if (remainingSlots == 0) return turnedOn;
+        var firstAvailableBattery = 0;
 
-        int indexToTurnOn = bank.SelectBatteryIndexToTurnOn(remainingSlots - 1);
-        turnedOn += bank.Ratings[indexToTurnOn];
-        bank = new BatteryBank(bank.Ratings[(indexToTurnOn + 1)..]);
+        while (remainingSlots > 0)
+        {
+            var candidates = bank.Batteries
+                .Where(b => b.Index >= firstAvailableBattery)
+                .Where(b => b.Index <= bank.Batteries.Length - remainingSlots);
+            var joltage = candidates.Max(b => b.Joltage);
+            var selectedBattery = candidates.Where(b => b.Joltage == joltage).MinBy(b => b.Index)!;
 
-        return bank.GetBatteryRating(turnedOn, remainingSlots - 1);
-    }   
+            yield return selectedBattery;
 
-    private static int SelectBatteryIndexToTurnOn(this BatteryBank bank, int remainingSlots) =>
-        bank.Ratings.IndexOf(bank.SelectBatteryJoltageToTurnOn(remainingSlots));
-
-    private static char SelectBatteryJoltageToTurnOn(this BatteryBank bank, int remainingSlots) =>
-        bank.Ratings[..^remainingSlots].ToCharArray().Max();
+            firstAvailableBattery = selectedBattery.Index + 1;
+            remainingSlots--;
+        }
+    }
 
     private static IEnumerable<BatteryBank> ReadBatteryBanks(this TextReader reader) =>
-        reader.ReadLines().Select(line => new BatteryBank(line));
+        reader.ReadLines().Select(ToBatteryBank);
 
-    record BatteryBank(string Ratings);
+    private static BatteryBank ToBatteryBank(this string line) =>
+        new BatteryBank(line.Select((c, i) => c.ToBattery(i, line.Length)).ToArray());
+    
+    private static Battery ToBattery(this char c, int index, int bankSize) =>
+        new Battery(int.Parse(c.ToString()), index, bankSize);
+
+    record BatteryBank(Battery[] Batteries);
+    
+    record Battery(int Joltage, int Index, int BankSize);
 }
