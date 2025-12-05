@@ -1,13 +1,19 @@
+using System.Diagnostics;
+
 static class Day02
 {
     public static void Run(TextReader reader)
     {
         var ranges = reader.ReadRanges().ToList();
 
+        Stopwatch sw = Stopwatch.StartNew();
+
         var (halfCutSum, allCutsSum) = ranges.SelectMany(range => range.EnumerateInvalidIds()).Sum();
+        sw.Stop();
 
         Console.WriteLine($"Sum of all invalid IDs (half-split): {halfCutSum}");
         Console.WriteLine($"Sum of all invalid IDs (any split):  {allCutsSum}");
+        Console.WriteLine($"Elapsed time: {sw.Elapsed}");
    }
 
    private static (ulong halfCutSum, ulong allCutsSum) Sum(this IEnumerable<(ulong number, bool isHalfSplit)> invalidIds) =>
@@ -42,35 +48,40 @@ static class Day02
         if (range.DigitsCount % groupSize != 0) yield break;
 
         ulong divisor = groupSize.GetDivisor();
-        var segments = range.ToSegments(divisor).Reverse().ToList();
+        var segments = range.ToSegmentsFromLowest(divisor).Reverse().ToList();
 
-        var mostSignificantSegment = segments[0];
-        for (ulong seed = mostSignificantSegment.From; seed <= mostSignificantSegment.To; seed++)
+        var mostSignificant = segments[0];
+
+        if (segments.IsValidSeed(mostSignificant.From, mostSignificant)) yield return mostSignificant.From.ToId(segments.Count, divisor);
+
+        for (ulong seed = mostSignificant.From + 1; seed < mostSignificant.To; seed++)
         {
-            int lowEndsCount = segments.TakeWhile(s => s.From == seed).Count();
-            if (lowEndsCount < segments.Count && segments[lowEndsCount].From > seed) continue;
-
-            int highEndsCount = segments.TakeWhile(s => s.To == seed).Count();
-            if (highEndsCount < segments.Count && segments[highEndsCount].To < seed) continue;
-
-            ulong number = segments.Aggregate(0UL, (acc, seg) => acc + seed * seg.Multiplier);
-            yield return number;
+            yield return seed.ToId(segments.Count, divisor);
         }
+
+        if (mostSignificant.To > mostSignificant.From && segments.IsValidSeed(mostSignificant.To, mostSignificant)) yield return mostSignificant.To.ToId(segments.Count, divisor);
     }
 
-    private static IEnumerable<Segment> ToSegments(this Range range, ulong divisor)
+    private static bool IsValidSeed(this IEnumerable<Segment> segments, ulong seed, Segment mostSignificant)
+    {
+        if (seed == mostSignificant.From && segments.SkipWhile(s => s.From == mostSignificant.From).Take(1).Any(s => s.From > mostSignificant.From)) return false;
+        if (seed == mostSignificant.To && segments.SkipWhile(s => s.To == mostSignificant.To).Take(1).Any(s => s.To < mostSignificant.To)) return false;
+        return true;
+    }
+
+    private static ulong ToId(this ulong segmentValue, int segmentsCount, ulong multiplier) =>
+        Enumerable.Repeat(segmentValue, segmentsCount).Aggregate(0UL, (acc, val) => acc * multiplier + val);
+
+    private static IEnumerable<Segment> ToSegmentsFromLowest(this Range range, ulong divisor)
     {
         ulong from = range.From;
         ulong to = range.To;
 
-        ulong multiplier = 1;
-        while (true)
+        while (from > 0 || to > 0)
         {
-            yield return new Segment(from % divisor, to % divisor, multiplier);
+            yield return new Segment(from % divisor, to % divisor);
             from /= divisor;
             to /= divisor;
-            if (from == 0 && to == 0) yield break;
-            multiplier *= divisor;
         }
     }
 
@@ -101,6 +112,9 @@ static class Day02
     private static int CountDigits(this ulong number) =>
         number == 0 ? 1 : (int)Math.Floor(Math.Log10(number)) + 1;
 
-    record Segment(ulong From, ulong To, ulong Multiplier);
+    record NumbersRange(ulong From, ulong To);
+    record Split(ulong Number, int PartsCount);
+
+    record Segment(ulong From, ulong To);
     record Range(ulong From, ulong To, int DigitsCount);
 }
