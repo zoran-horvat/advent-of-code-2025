@@ -1,60 +1,82 @@
+using System.Diagnostics;
+
 static class Day02
 {
     public static void Run(TextReader reader)
     {
         var ranges = reader.ReadRanges().ToList();
 
-        ulong sumInvalidHalf = ranges.Select(SumInvalidIdsHalfCut).Sum();
+        Stopwatch sw = Stopwatch.StartNew();
 
-        Console.WriteLine($"Sum of all invalid IDs (half-split): {sumInvalidHalf}");
+        var (halfCutSum, allCutsSum) = ranges.SelectMany(range => range.EnumerateInvalidIds()).Sum();
+        sw.Stop();
+
+        Console.WriteLine($"Sum of all invalid IDs (half-split): {halfCutSum}");
+        Console.WriteLine($"Sum of all invalid IDs (any split):  {allCutsSum}");
+        Console.WriteLine($"Elapsed time: {sw.Elapsed}");
+   }
+
+   private static (ulong halfCutSum, ulong allCutsSum) Sum(this IEnumerable<(ulong number, bool isHalfSplit)> invalidIds) =>
+        invalidIds.Aggregate((halfCutSum: 0UL, allCutsSum: 0UL), (acc, t) => (
+            t.isHalfSplit ? acc.halfCutSum + t.number : acc.halfCutSum,
+            acc.allCutsSum + t.number));
+
+    private static IEnumerable<(ulong number, bool isHalfSplit)> EnumerateInvalidIds(this Range range)
+    {
+        List<(bool isHalfSplit, IEnumerator<ulong> enumerator)> candidates = new();
+        for (int groupSize = 1; groupSize <= range.DigitsCount / 2; groupSize++)
+        {
+            if (range.DigitsCount % groupSize != 0) continue;
+            var enumerator = range.EnumerateInvalidIds(groupSize).GetEnumerator();
+            if (enumerator.MoveNext()) candidates.Add((range.DigitsCount % 2 == 0 && groupSize == range.DigitsCount / 2, enumerator));
+        }
+
+        while (candidates.Count > 0)
+        {
+            ulong minNumber = candidates.Min(c => c.enumerator.Current);
+            bool isHalfSplit = candidates.Any(c => c.isHalfSplit && c.enumerator.Current == minNumber);
+            yield return (minNumber, isHalfSplit);
+
+            candidates = candidates
+                .Where(c => c.enumerator.Current != minNumber || c.enumerator.MoveNext())
+                .ToList();
+        }
     }
 
-    private static ulong Sum(this IEnumerable<ulong> splits) =>
-        splits.Aggregate(0UL, (acc, val) => acc + val);
-
-    private static ulong SumInvalidIdsHalfCut(this Range range)
+    private static IEnumerable<ulong> EnumerateInvalidIds(this Range range, int groupSize)
     {
-        if (range.To < range.From) return 0;
-        if (range.DigitsCount % 2 != 0) return 0;
+        if (range.DigitsCount % groupSize != 0) yield break;
 
-        ulong divisor = (range.DigitsCount / 2).GetDivisor();
-        var segments = range.IsolateSegments(divisor);
+        ulong divisor = groupSize.GetDivisor();
+        var segments = range.ToSegments(divisor).Reverse().ToList();
 
-        ulong sum = 0;
-
-        foreach (var segment in segments)
+        var mostSignificantSegment = segments[0];
+        for (ulong seed = mostSignificantSegment.From; seed <= mostSignificantSegment.To; seed++)
         {
-            ulong from = Math.Max(segment.From / divisor, segment.From % divisor);
-            ulong to = Math.Min(segment.To / divisor, segment.To % divisor);
+            int lowEndsCount = segments.TakeWhile(s => s.From == seed).Count();
+            if (lowEndsCount < segments.Count && segments[lowEndsCount].From > seed) continue;
 
-            if (to < from) continue;
+            int highEndsCount = segments.TakeWhile(s => s.To == seed).Count();
+            if (highEndsCount < segments.Count && segments[highEndsCount].To < seed) continue;
 
-            ulong halfSum = (to * (to + 1) - (from - 1) * from)  / 2;
-            sum += halfSum * divisor + halfSum;
+            ulong number = segments.Aggregate(0UL, (acc, seg) => acc + seed * seg.Multiplier);
+            yield return number;
         }
-
-        return sum;
     }
 
-    private static IEnumerable<NumbersRange> IsolateSegments(this Range range, ulong divisor)
+    private static IEnumerable<Segment> ToSegments(this Range range, ulong divisor)
     {
-        ulong fromUp = range.From / divisor;
-        ulong toUp = range.To / divisor;
+        ulong from = range.From;
+        ulong to = range.To;
 
-        if (fromUp == toUp)
+        ulong multiplier = 1;
+        while (true)
         {
-            yield return new NumbersRange(range.From, range.To);
-        }
-        else if (fromUp == toUp - 1)
-        {
-            yield return new NumbersRange(range.From, range.From / divisor * divisor + divisor - 1);
-            yield return new NumbersRange((range.From / divisor + 1) * divisor, range.To);
-        }
-        else
-        {
-            yield return new NumbersRange(range.From, (range.From / divisor + 1) * divisor - 1);
-            yield return new NumbersRange((range.From / divisor + 1) * divisor, range.To / divisor * divisor - 1);
-            yield return new NumbersRange(range.To / divisor * divisor, range.To);
+            yield return new Segment(from % divisor, to % divisor, multiplier);
+            from /= divisor;
+            to /= divisor;
+            if (from == 0 && to == 0) yield break;
+            multiplier *= divisor;
         }
     }
 
@@ -87,5 +109,7 @@ static class Day02
 
     record NumbersRange(ulong From, ulong To);
     record Split(ulong Number, int PartsCount);
+
+    record Segment(ulong From, ulong To, ulong Multiplier);
     record Range(ulong From, ulong To, int DigitsCount);
 }
