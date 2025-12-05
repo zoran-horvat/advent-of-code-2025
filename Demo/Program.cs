@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.IO;
 using System.Text.RegularExpressions;
 
 Action<TextReader>[] problemSolutions =
@@ -59,10 +60,19 @@ IEnumerable<(string label, TextReader reader)> LocateInputs(int problemIndex)
 
     foreach (var resource in resources)
     {
-        var stream = assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"Missing embedded resource '{resource}'.");
-        yield return (ExtractInputLabel(resource, "default"), new StreamReader(stream));
+        var stream = assembly.GetManifestResourceStream(resource);
+        var reader = stream is null ? Console.In : new StreamReader(LoadInMemory(stream));
+
+        yield return (ExtractInputLabel(resource, "default"), reader);
     }
+}
+
+Stream LoadInMemory(Stream input)
+{
+    var memoryStream = new MemoryStream();
+    input.CopyTo(memoryStream);
+    memoryStream.Position = 0;
+    return memoryStream;
 }
 
 string ExtractInputLabel(string fileName, string defaultLabel)
