@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 Action<TextReader>[] problemSolutions =
 [
@@ -7,6 +8,8 @@ Action<TextReader>[] problemSolutions =
 
 foreach ((int fromIndex, int toIndex) in ProblemIndices())
 {
+    TimeSpan totalTime = TimeSpan.Zero;
+
     for (int i = fromIndex; i <= toIndex; i++)
     {
         if (fromIndex != toIndex)
@@ -20,12 +23,18 @@ foreach ((int fromIndex, int toIndex) in ProblemIndices())
         foreach (var (label, reader) in inputs)
         {
             if (inputs.Count > 1) Console.WriteLine($"--- Input: {label} ---");
+            var stopwatch = Stopwatch.StartNew();
             problemSolutions[i](reader);
+            stopwatch.Stop();
+            totalTime += stopwatch.Elapsed;
+            Console.WriteLine($"Done in: {stopwatch.Elapsed}");
             Console.WriteLine();
         }
         
         if (fromIndex != toIndex && i < toIndex) Console.WriteLine(new string('-', 80));
     }
+
+    Console.WriteLine($"Total execution time: {totalTime}");
 }
 
 IEnumerable<(string label, TextReader reader)> LocateInputs(int problemIndex)
