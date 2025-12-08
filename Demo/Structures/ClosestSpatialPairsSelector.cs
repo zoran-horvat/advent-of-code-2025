@@ -15,11 +15,19 @@ static class ClosestSpatialPairsSelector
             {
                 var (x1, y1, z1) = boxPair.First.Points[0];
                 var (x2, y2, z2) = boxPair.Second.Points[0];
-                if (boxPair.First.Points[0].CompareTo(boxPair.Second.Points[0]) < 0) yield return ((x1, y1, z1), (x2, y2, z2));
+                yield return ((x1, y1, z1), (x2, y2, z2));
                 continue;
             }
 
-            foreach (var pair in boxPair.Split()) queue.Enqueue(pair, pair.first.DistanceFrom(pair.second));
+            foreach (var pair in boxPair.Split())
+            {
+                if (pair.first.Points.Count == 1 && pair.second.Points.Count == 1 &&
+                    pair.first.Points[0].CompareTo(pair.second.Points[0]) >= 0)
+                {
+                    continue;
+                }
+                queue.Enqueue(pair, pair.first.DistanceFrom(pair.second));
+            }
         }
     }
 
@@ -70,11 +78,18 @@ static class ClosestSpatialPairsSelector
             _ => point.Z
         };
 
-        IComparer<Point> comparer = Comparer<Point>.Create((a, b) => selectAxis(a, splitAxis).CompareTo(selectAxis(b, splitAxis)));
-        box.Points.Sort(comparer);
+        List<int> values = box.Points.Select(point => selectAxis(point, splitAxis)).ToList();
+        values.Sort();
+        int medianValue = values[values.Count / 2];
 
-        List<Point> left = box.Points[..(box.Points.Count / 2)];
-        List<Point> right = box.Points[(box.Points.Count / 2)..];
+        List<Point> left = new List<Point>(values.Count / 2);
+        List<Point> right = new List<Point>(values.Count - values.Count / 2);
+
+        foreach (var point in box.Points)
+        {
+            if (selectAxis(point, splitAxis) < medianValue) left.Add(point);
+            else right.Add(point);
+        }
 
         return (left.ToBox(), right.ToBox());
     }
@@ -104,5 +119,5 @@ static class ClosestSpatialPairsSelector
 
     private record Box(List<Point> Points, int MinX, int MinY, int MinZ, int MaxX, int MaxY, int MaxZ);
     
-    private record Point(int X, int Y, int Z);    
+    private record struct Point(int X, int Y, int Z);    
 }

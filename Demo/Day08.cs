@@ -14,7 +14,7 @@ static class Day08
     private static (int[] largestCircuits, Ray lastRay) SimulateMerging(this IEnumerable<Point> points, int reportAfterRaysCount)
     {
         var list = points.ToList();
-        var rayCandidates = list.GetRaysInPreferenceOrderBruteForce();
+        var rayCandidates = list.GetRaysInPreferenceOrder();
         Dictionary<Point, HashSet<Point>> adjacentPoints = points.ToDictionary(p => p, p => new HashSet<Point>() { p });
 
         int[] largestCircuits = Array.Empty<int>();
