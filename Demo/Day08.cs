@@ -37,11 +37,11 @@ static class Day08
 
             if (circuitA == circuitB) continue;
 
-            foreach (var pointB in circuitB)
-            {
-                adjacentPoints[pointB] = circuitA;
-                circuitA.Add(pointB);
-            }
+            if (circuitA.Count < circuitB.Count) (circuitA, circuitB) = (circuitB, circuitA);
+
+            circuitA.UnionWith(circuitB);
+
+            foreach (var pointB in circuitB) adjacentPoints[pointB] = circuitA;
 
             if (circuitA.Count == list.Count) return (largestCircuits, ray);
         }
