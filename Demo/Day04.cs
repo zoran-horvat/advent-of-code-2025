@@ -40,34 +40,37 @@ static class Day04
         string[] rows = reader.ReadLines().ToArray();
         
         var rolls = new HashSet<Position>();
-        var neighbors = new Dictionary<Position, List<Position>>();
+        var neighbors = new Dictionary<Position, Position[]>();
 
         for (int row = 0; row < rows.Length; row++)
         {
-            for (int column = 0; column < rows[row].Length; column++)
+            int prevPos = 0;
+            while ((prevPos = rows[row].IndexOf('@', prevPos)) != -1)
             {
-                var position = new Position(row, column);
-                string line = rows[row];
-
-                if (rows[row][column] == '@') rolls.Add(position);
-
-                List<Position> validNeighbors = new();
-                if (position.Row > 0 && position.Column > 0) validNeighbors.Add(new Position(position.Row - 1, position.Column - 1));
-                if (position.Row > 0) validNeighbors.Add(new Position(position.Row - 1, position.Column));
-                if (position.Row > 0 && position.Column < line.Length - 1) validNeighbors.Add(new Position(position.Row - 1, position.Column + 1));
-                if (position.Column > 0) validNeighbors.Add(new Position(position.Row, position.Column - 1));
-                if (position.Column < line.Length - 1) validNeighbors.Add(new Position(position.Row, position.Column + 1));
-                if (position.Row < rows.Length - 1 && position.Column > 0) validNeighbors.Add(new Position(position.Row + 1, position.Column - 1));
-                if (position.Row < rows.Length - 1) validNeighbors.Add(new Position(position.Row + 1, position.Column));
-                if (position.Row < rows.Length - 1 && position.Column < line.Length - 1) validNeighbors.Add(new Position(position.Row + 1, position.Column + 1));
-
-                neighbors[position] = validNeighbors;
+                rolls.Add(new Position(row, prevPos));
+                prevPos++;
             }
+        }
+
+        foreach (var roll in rolls)
+        {
+            List<Position> validNeighbors = new();
+            for (int neighborRow = Math.Max(0, roll.Row - 1); neighborRow <= Math.Min(rows.Length - 1, roll.Row + 1); neighborRow++)
+            {
+                for (int neighborColumn = Math.Max(0, roll.Column - 1); neighborColumn <= Math.Min(rows[neighborRow].Length - 1, roll.Column + 1); neighborColumn++)
+                {
+                    if (neighborRow == roll.Row && neighborColumn == roll.Column) continue;
+                    var neighbor = new Position(neighborRow, neighborColumn);
+                    if (rolls.Contains(neighbor)) validNeighbors.Add(neighbor);
+                }
+            }
+
+            neighbors[roll] = validNeighbors.ToArray();
         }
 
         return new(rolls, neighbors);
     }
 
     record struct Position(int Row, int Column);
-    record Map(HashSet<Position> Rolls, Dictionary<Position, List<Position>> Neighbors);
+    record Map(HashSet<Position> Rolls, Dictionary<Position, Position[]> Neighbors);
 }
