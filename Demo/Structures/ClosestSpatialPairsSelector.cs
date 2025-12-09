@@ -1,17 +1,15 @@
-using System.Runtime.ExceptionServices;
-
 static class ClosestSpatialPairsSelector
 {
     public static IEnumerable<((int x, int y, int z) first, (int x, int y, int z) second)> GetClosestPairs(this IEnumerable<(int x, int y, int z)> points)
     {
-        var rootBox = points.Select(triplet => new Point(triplet.x, triplet.y, triplet.z)).ToList().ToBox();
+        var rootBox = points.Select(triplet => new Point(triplet.x, triplet.y, triplet.z)).ToArray().ToBox();
         PriorityQueue<(Box First, Box Second), long> queue = new();
 
         queue.Enqueue((rootBox, rootBox), 0);
 
         while (queue.TryDequeue(out var boxPair, out var distance))
         {
-            if (boxPair.First.Points.Count == 1 && boxPair.Second.Points.Count == 1)
+            if (boxPair.First.Points.Length == 1 && boxPair.Second.Points.Length == 1)
             {
                 var (x1, y1, z1) = boxPair.First.Points[0];
                 var (x2, y2, z2) = boxPair.Second.Points[0];
@@ -19,46 +17,40 @@ static class ClosestSpatialPairsSelector
                 continue;
             }
 
-            foreach (var pair in boxPair.Split())
-            {
-                if (pair.first.Points.Count == 1 && pair.second.Points.Count == 1 &&
-                    pair.first.Points[0].CompareTo(pair.second.Points[0]) >= 0)
-                {
-                    continue;
-                }
-                queue.Enqueue(pair, pair.first.DistanceFrom(pair.second));
-            }
+            boxPair.SplitAndEnqueue(queue);
         }
     }
 
-    private static IEnumerable<(Box first, Box second)> Split(this (Box first, Box second) pair)
+    private static void Enqueue(this PriorityQueue<(Box first, Box second), long> queue, (Box first, Box second) pair)
+    {
+        if (pair.first.Points.Length == 1 && pair.second.Points.Length == 1 && pair.first.Points[0] == pair.second.Points[0]) return;
+
+        long distance = pair.first.DistanceFrom(pair.second);
+        queue.Enqueue(pair, distance);
+    }
+
+    private static void SplitAndEnqueue(this (Box first, Box second) pair, PriorityQueue<(Box first, Box second), long> queue)
     {
         if (pair.first == pair.second)
         {
             var split = pair.first.Split();
-            yield return (split.first, split.first);
-            yield return (split.first, split.second);
-            yield return (split.second, split.first);
-            yield return (split.second, split.second);
+            queue.Enqueue((split.first, split.first));
+            queue.Enqueue((split.first, split.second));
+            queue.Enqueue((split.second, split.second));
         }
-        else if (pair.first.Points.Count >= pair.second.Points.Count)
+        else if (pair.first.Points.Length >= pair.second.Points.Length)
         {
             var split = pair.first.Split();
-            yield return (split.first, pair.second);
-            yield return (split.second, pair.second);
+            queue.Enqueue((split.first, pair.second));
+            queue.Enqueue((split.second, pair.second));
         }
         else
         {
             var split = pair.second.Split();
-            yield return (pair.first, split.first);
-            yield return (pair.first, split.second);
+            queue.Enqueue((pair.first, split.first));
+            queue.Enqueue((pair.first, split.second));
         }
     }
-
-    private static int CompareTo(this Point a, Point b) =>
-        a.X != b.X ? a.X.CompareTo(b.X)
-        : a.Y != b.Y ? a.Y.CompareTo(b.Y)
-        : a.Z.CompareTo(b.Z);
 
     private static (Box first, Box second) Split(this Box box)
     {
@@ -78,37 +70,55 @@ static class ClosestSpatialPairsSelector
             _ => point.Z
         };
 
-        List<int> values = box.Points.Select(point => selectAxis(point, splitAxis)).ToList();
-        values.Sort();
-        int medianValue = values[values.Count / 2];
+        int[] values = new int[box.Points.Length];
+        for (int i = 0; i < box.Points.Length; i++)
+        {
+            values[i] = selectAxis(box.Points[i], splitAxis);
+        }
+        Array.Sort(values);
+        int medianValue = values[values.Length / 2];
+        int leftCount = values.Length / 2;
+        while (leftCount > 0 && values[leftCount - 1] == medianValue) leftCount--;
 
-        List<Point> left = new List<Point>(values.Count / 2);
-        List<Point> right = new List<Point>(values.Count - values.Count / 2);
+        Point[] left = new Point[leftCount];
+        Point[] right = new Point[values.Length - leftCount];
 
+        int leftIndex = 0;
+        int rightIndex = 0;
         foreach (var point in box.Points)
         {
-            if (selectAxis(point, splitAxis) < medianValue) left.Add(point);
-            else right.Add(point);
+            if (selectAxis(point, splitAxis) < medianValue) left[leftIndex++] = point;
+            else right[rightIndex++] = point;
         }
 
         return (left.ToBox(), right.ToBox());
     }
 
-    private static Box ToBox(this List<Point> points)
+    private static Box ToBox(this Point[] points)
     {
-        var extremes = points.Select(point => (min: point, max: point))
-            .Aggregate((acc, point) => 
-            (
-                min: new(Math.Min(acc.min.X, point.min.X), Math.Min(acc.min.Y, point.min.Y), Math.Min(acc.min.Z, point.min.Z)),
-                max: new(Math.Max(acc.max.X, point.max.X), Math.Max(acc.max.Y, point.max.Y), Math.Max(acc.max.Z, point.max.Z))
-            ));
+        var minX = points[0].X;
+        var minY = points[0].Y;
+        var minZ = points[0].Z;
+        var maxX = points[0].X;
+        var maxY = points[0].Y;
+        var maxZ = points[0].Z;
 
-        return new Box(points, extremes.min.X, extremes.min.Y, extremes.min.Z, extremes.max.X, extremes.max.Y, extremes.max.Z);
+        for (int i = 1; i < points.Length; i++)
+        {
+            if (points[i].X < minX) minX = points[i].X;
+            if (points[i].Y < minY) minY = points[i].Y;
+            if (points[i].Z < minZ) minZ = points[i].Z;
+            if (points[i].X > maxX) maxX = points[i].X;
+            if (points[i].Y > maxY) maxY = points[i].Y;
+            if (points[i].Z > maxZ) maxZ = points[i].Z;
+        }
+
+        return new Box(points, minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     private static long DistanceFrom(this Box A, Box B)
     {
-        if (A == B) return 0;
+        if (A == B) return A.EstimateMinimumInnerDistance();
 
         long dx = Math.Max(0, Math.Max(A.MinX - B.MaxX, B.MinX - A.MaxX));
         long dy = Math.Max(0, Math.Max(A.MinY - B.MaxY, B.MinY - A.MaxY));
@@ -117,7 +127,19 @@ static class ClosestSpatialPairsSelector
         return dx * dx + dy * dy + dz * dz;
     }
 
-    private record Box(List<Point> Points, int MinX, int MinY, int MinZ, int MaxX, int MaxY, int MaxZ);
+    private static long EstimateMinimumInnerDistance(this Box box) => box.Points switch
+    {
+        [var a, var b, var c] => Math.Min(a.DistanceFrom(b), Math.Min(b.DistanceFrom(c), c.DistanceFrom(a))),
+        [var a, var b] => a.DistanceFrom(b),
+        _ => 0
+    };
+
+    private static long DistanceFrom(this Point a, Point b) =>
+        (long)(a.X - b.X) * (a.X - b.X) +
+        (long)(a.Y - b.Y) * (a.Y - b.Y) +
+        (long)(a.Z - b.Z) * (a.Z - b.Z);
+
+    private record Box(Point[] Points, int MinX, int MinY, int MinZ, int MaxX, int MaxY, int MaxZ);
     
-    private record struct Point(int X, int Y, int Z);    
+    private record struct Point(int X, int Y, int Z);
 }
