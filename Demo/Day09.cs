@@ -1,6 +1,3 @@
-using System.Linq.Expressions;
-using Microsoft.VisualBasic;
-
 static class Day09
 {
     public static void Run(TextReader reader)
@@ -12,6 +9,12 @@ static class Day09
         // 4582310446 too high
         // 2976014041 - not
         // 137489982 - not
+        // 1448987856 - not
+        var maxArea = points.GetMaxArea();
+        var maxInternalArea = points.GetMaxInternalArea();
+
+        Console.WriteLine($"Largest rectangle area:          {maxArea}");
+        Console.WriteLine($"Largest internal rectangle area: {maxInternalArea}");
     }
 
     private static long GetMaxArea(this List<Point> points)
@@ -60,18 +63,7 @@ static class Day09
 
         if (maxX - minX > maxSize || maxY - minY > maxSize) return;
         
-        var discriminators = points.ToList()
-            .ToClockwiseLines()
-            .GetHorizontalDiscriminators()
-            .OrderByDescending(discriminator => discriminator switch 
-            {
-                EnterAt enterAt => enterAt.Line.Y,
-                ExitBelow enterBelow => enterBelow.Line.Y - 1,
-                _ => throw new ArgumentException("Unknown discriminator type.")
-            })
-            .ToList();
-
-        discriminators.Select(ToLabel).ToList().ForEach(Console.WriteLine);
+        var discriminators = points.GetDiscriminatorsFromTop().ToList();
 
         bool IsInside(Point point) => discriminators.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
 
@@ -96,6 +88,98 @@ static class Day09
         ExitBelow exitBelow => $"ExitBelow Y={exitBelow.Line.Y} X=[{exitBelow.Line.FromX}..{exitBelow.Line.ToX}]",
         _ => "Unknown discriminator"
     };
+
+    private static long GetMaxInternalArea(this List<Point> points)
+    {
+        var discriminators = points.GetDiscriminatorsFromTop();
+
+        long maxArea = 0;
+        var stripes = new List<Stripe>();
+
+        foreach (var discriminator in discriminators)
+        {
+            maxArea = stripes.GetMaxArea(discriminator, maxArea);
+            stripes = discriminator.ToNewStripes(stripes)
+                .Concat(stripes.SelectMany(stripe => stripe.CloseStripe(discriminator)))
+                .Distinct()
+                .ToList();
+        }
+
+        return maxArea;
+    }
+
+    private static string ToLabel(this Stripe stripe) =>
+        $"({stripe.Pivot.X},{stripe.Pivot.Y}) [{stripe.Top.FromX}-{stripe.Top.ToX}]";
+
+    private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, Discriminator discriminator) =>
+        discriminator is ExitBelow exitBelow ? stripe.CloseStripe(exitBelow)
+        : [stripe];
+
+    private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, ExitBelow discriminator)
+    {
+        if (discriminator.Line.FromX < stripe.Top.FromX && discriminator.Line.ToX > stripe.Top.ToX) yield break;
+
+        if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
+        else if (discriminator.Line.FromX > stripe.Top.ToX) yield return stripe;
+        else if (discriminator.Line.FromX > stripe.Top.FromX && discriminator.Line.FromX > stripe.Pivot.X) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
+        else if (discriminator.Line.ToX < stripe.Top.ToX && discriminator.Line.ToX < stripe.Pivot.X) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
+    }
+
+    private static IEnumerable<Stripe> ToNewStripes(this Discriminator discriminator, IEnumerable<Stripe> existingStripes) => discriminator switch
+    {
+        EnterAt enterAt => enterAt.ToNewStripes(existingStripes),
+        ExitBelow exitBelow => exitBelow.ToNewStripes(existingStripes),
+        _ => Enumerable.Empty<Stripe>()
+    };
+
+    private static IEnumerable<Stripe> ToNewStripes(this ExitBelow discriminator, IEnumerable<Stripe> existingStripes)
+    {
+        var toLeft = discriminator.Points
+            .Where(p => p.X < discriminator.Line.FromX)
+            .SelectMany(p => existingStripes.Where(s => s.Contains(p)).Select(s => new Stripe(p, new Right(discriminator.Line.Y, s.Top.FromX, p.X))));
+
+        var toRight = discriminator.Points
+            .Where(p => p.X > discriminator.Line.ToX)
+            .SelectMany(p => existingStripes.Where(s => s.Contains(p)).Select(s => new Stripe(p, new Right(discriminator.Line.Y, p.X, s.Top.ToX))));
+
+        return toLeft.Concat(toRight);
+    }
+
+    private static IEnumerable<Stripe> ToNewStripes(this EnterAt discriminator, IEnumerable<Stripe> existingStripes)
+    {
+        Right top = discriminator.Line;
+        foreach (var stripeTop in existingStripes.Select(s => s.Top).Where(t => t.Y > top.Y))
+        {
+            if (stripeTop.FromX < top.FromX && stripeTop.ToX >= top.FromX - 1) top = top with { FromX = top.FromX };
+            if (stripeTop.FromX <= top.ToX + 1 && stripeTop.ToX > top.ToX) top = top with { ToX = stripeTop.ToX };
+        }
+
+        foreach (var point in discriminator.Points)
+        {
+            if (point.X > top.FromX) yield return new Stripe(point, top with { ToX = point.X });
+            if (point.X < top.ToX) yield return new Stripe(point, top with { FromX = point.X });
+        }
+    }
+
+    private static long GetMaxArea(this IEnumerable<Stripe> stripes, Discriminator discriminator, long previousMaxArea) =>
+        discriminator.GetPoints()
+            .SelectMany(point => stripes.Where(stripe => stripe.Contains(point)).Select(stripe => GetArea((stripe.Pivot, point)))
+            .Concat([previousMaxArea]))
+            .Max();
+
+    private static bool Contains(this Stripe stripe, Point point) =>
+        stripe.Top.Y >= point.Y && stripe.Top.FromX <= point.X && stripe.Top.ToX >= point.X;
+
+    private static IEnumerable<Discriminator> GetDiscriminatorsFromTop(this IEnumerable<Point> points) =>
+        points.ToList()
+            .ToClockwiseLines()
+            .GetHorizontalDiscriminators()
+            .OrderByDescending(discriminator => discriminator switch 
+            {
+                EnterAt enterAt => enterAt.Line.Y,
+                ExitBelow enterBelow => enterBelow.Line.Y - 1,
+                _ => throw new ArgumentException("Unknown discriminator type.")
+            });
 
     private static IEnumerable<Discriminator> GetHorizontalDiscriminators(this IEnumerable<Line> segments)
     {
@@ -160,6 +244,13 @@ static class Day09
         _ => line
     };
 
+    private static Point[] GetPoints(this Discriminator discriminator) => discriminator switch
+    {
+        EnterAt enterAt => enterAt.Points,
+        ExitBelow exitBelow => exitBelow.Points,
+        _ => throw new ArgumentException("Unknown discriminator type.")
+    };
+
     private static Point[] GetPoints(this Line line) => line switch
     {
         Right r => [new Point(r.FromX, r.Y), new Point(r.ToX, r.Y)],
@@ -193,6 +284,8 @@ static class Day09
             .Select(line => line.Split(',', StringSplitOptions.RemoveEmptyEntries))
             .Select(parts => new Point(int.Parse(parts[0]), int.Parse(parts[1])));
 
+    record Stripe(Point Pivot, Right Top);
+
     record Index(Dictionary<int, List<ShapeSegment>> ShapesByX);
     record ShapeSegment(int MaxY, int Change);
 
@@ -206,7 +299,6 @@ static class Day09
     record Left(int Y, int FromX, int ToX) : HorizontalLine(Y);
     record Up(int X, int FromY, int ToY) : Line;
     record Down(int X, int FromY, int ToY) : Line;
-
 
     record Point(int X, int Y);
 }
