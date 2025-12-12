@@ -45,9 +45,6 @@ static class Day09
         return maxArea;
     }
 
-    private static long GetMaxAreaBruteForce(this List<Point> points) =>
-        points.GetAllPairs().Select(GetArea).Max();
-
     private static IEnumerable<(Point a, Point b)> GetAllPairs(this List<Point> points) =>
         from i in Enumerable.Range(0, points.Count - 1)
         let a = points[i]
@@ -126,7 +123,12 @@ static class Day09
 
             if (containsExitLines) continue;
 
-            var topPoints = Enumerable.Range(fromX, toX - fromX + 1)
+            var topPoints = discriminatorsFromTop
+                .SelectMany(d => d.GetPoints())
+                .SelectMany(p => new int[] { p.X - 1, p.X, p.X + 1 })
+                .Concat([fromX, fromX + 1, toX, toX - 1])
+                .Distinct()
+                .Where(x => x >= fromX && x <= toX)
                 .Select(x => new Point(x, toY));
 
             if (!topPoints.All(isInside)) continue;
@@ -144,6 +146,10 @@ static class Day09
         long maxArea = 0;
         var stripes = new List<Stripe>();
 
+        int xRange = points.Max(p => p.X) - points.Min(p => p.X) + 1;
+        int yRange = points.Max(p => p.Y) - points.Min(p => p.Y) + 1;
+        bool report = xRange <= 40 && yRange <= 40;
+
         foreach (var discriminator in discriminators)
         {
             maxArea = stripes.GetMaxArea(discriminator, maxArea);
@@ -154,7 +160,7 @@ static class Day09
 
             var y = discriminator.GetPoints().Max(p => p.Y);
             var printableStripes = stripes.OrderBy(s => s.Top.FromX).ToList();
-            Console.WriteLine($"y={y,-3} Stripes: {string.Join(", ", printableStripes.Select(s => s.ToLabel()))}");
+            if (report) Console.WriteLine($"y={y,-3} Stripes: {string.Join(", ", printableStripes.Select(s => s.ToLabel()))}");
         }
 
         return maxArea;
@@ -169,12 +175,11 @@ static class Day09
 
     private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, ExitBelow discriminator)
     {
-        if (discriminator.Line.FromX < stripe.Top.FromX && discriminator.Line.ToX > stripe.Top.ToX) yield break;
-
-        if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
+        if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X) yield break;        // Discriminator removes pivot
+        else if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
         else if (discriminator.Line.FromX > stripe.Top.ToX) yield return stripe;
-        else if (discriminator.Line.FromX > stripe.Top.FromX && discriminator.Line.FromX > stripe.Pivot.X) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
-        else if (discriminator.Line.ToX < stripe.Top.ToX && discriminator.Line.ToX < stripe.Pivot.X) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
+        else if (discriminator.Line.FromX <= stripe.Top.ToX) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
+        else if (discriminator.Line.ToX >= stripe.Top.FromX) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
     }
 
     private static IEnumerable<Stripe> ToNewStripes(this Discriminator discriminator, IEnumerable<Stripe> existingStripes) => discriminator switch
