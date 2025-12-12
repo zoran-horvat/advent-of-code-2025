@@ -4,22 +4,11 @@ static class Day09
     {
         var points = reader.ReadPoints().ToList();
 
-        points.Draw(40);
-
         var maxArea = points.GetMaxArea();
-
-        System.Diagnostics.Stopwatch swBruteForce = System.Diagnostics.Stopwatch.StartNew();
-        var maxInternalAreaBruteForce = points.GetMaxInternalAreaBruteForce();
-        swBruteForce.Stop();
-
-        System.Diagnostics.Stopwatch swOptimized = System.Diagnostics.Stopwatch.StartNew();
         var maxInternalArea = points.GetMaxInternalArea();
-        swOptimized.Stop();
 
-
-        Console.WriteLine($"Largest rectangle area:                        {maxArea}");
-        Console.WriteLine($"Largest internal rectangle area (brute force): {maxInternalAreaBruteForce} ({swBruteForce.Elapsed})");
-        Console.WriteLine($"Largest internal rectangle area:               {maxInternalArea} ({swOptimized.Elapsed})");
+        Console.WriteLine($"Largest rectangle area:          {maxArea}");
+        Console.WriteLine($"Largest internal rectangle area: {maxInternalArea}");
     }
 
     private static long GetMaxArea(this List<Point> points)
@@ -45,93 +34,8 @@ static class Day09
         return maxArea;
     }
 
-    private static long GetMaxAreaBruteForce(this List<Point> points) =>
-        points.GetAllPairs().Select(GetArea).Max();
-
-    private static IEnumerable<(Point a, Point b)> GetAllPairs(this List<Point> points) =>
-        from i in Enumerable.Range(0, points.Count - 1)
-        let a = points[i]
-        from b in points[(i + 1)..]
-        select (a, b);
-
     private static long GetArea((Point a, Point b) pair) =>
         (long)(Math.Abs(pair.a.X - pair.b.X) + 1) * (Math.Abs(pair.a.Y - pair.b.Y) + 1);
-
-    private static void Draw(this IEnumerable<Point> points, int maxSize)
-    {
-        var set = points.ToHashSet();
-        int minX = 0;
-        int maxX = set.Max(p => p.X) + 2;
-        int minY = 0;
-        int maxY = set.Max(p => p.Y) + 2;
-
-        if (maxX - minX > maxSize || maxY - minY > maxSize) return;
-
-        if (maxX - minX > maxSize || maxY - minY > maxSize) return;
-        
-        var discriminators = points.GetDiscriminatorsFromTop().ToList();
-
-        bool isInside(Point point) => discriminators.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
-
-        Console.WriteLine($"({minX},{minY})");
-        for (int y = minY; y <= maxY; y++)
-        {
-            Console.Write($"y={y,3} ");
-            for (int x = minX; x <= maxX; x++)
-            {
-                var point = new Point(x, y);
-                if (set.Contains(point) && isInside(point)) Console.Write('O');
-                else if (set.Contains(point)) Console.Write('#');
-                else if (isInside(point)) Console.Write('X');
-                else Console.Write('.');
-            }
-            Console.WriteLine();
-        }
-    }
-
-    private static string ToLabel(this Discriminator discriminator) => discriminator switch
-    {
-        EnterAt enterAt => $"EnterAt Y={enterAt.Line.Y} X=[{enterAt.Line.FromX}..{enterAt.Line.ToX}]",
-        ExitBelow exitBelow => $"ExitBelow Y={exitBelow.Line.Y} X=[{exitBelow.Line.FromX}..{exitBelow.Line.ToX}]",
-        _ => "Unknown discriminator"
-    };
-
-    private static long GetMaxInternalAreaBruteForce(this List<Point> points)
-    {
-        var discriminatorsFromTop = points.GetDiscriminatorsFromTop().ToList();
-
-        bool isInside(Point point) => discriminatorsFromTop.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
-
-        var candidates = points.GetAllPairs().OrderByDescending(GetArea);
-
-        foreach (var (a, b) in candidates)
-        {
-            var fromX = Math.Min(a.X, b.X);
-            var toX = Math.Max(a.X, b.X);
-            var fromY = Math.Min(a.Y, b.Y);
-            var toY = Math.Max(a.Y, b.Y);
-
-            var containsExitLines = discriminatorsFromTop.OfType<ExitBelow>()
-                .Where(d => d.Line.Y - 1 <= toY && d.Line.Y - 1 >= fromY)
-                .Where(d => !(d.Line.ToX < fromX || d.Line.FromX > toX))
-                .Any();
-
-            if (containsExitLines) continue;
-
-            var topPoints = discriminatorsFromTop
-                .SelectMany(discriminator => discriminator.GetPoints())
-                .Where(p => p.Y >= toY)
-                .Where(p => p.X >= fromX && p.X <= toX)
-                .Select(p => p with { Y = toY })
-                .Concat([new Point(fromX, toY), new Point(toX, toY)]);
-
-            if (!topPoints.All(isInside)) continue;
-
-            return GetArea((a, b));
-        }
-
-        return 0;
-    }
 
     private static long GetMaxInternalArea(this List<Point> points)
     {
@@ -152,21 +56,17 @@ static class Day09
         return maxArea;
     }
 
-    private static string ToLabel(this Stripe stripe) =>
-        $"({stripe.Pivot.X},{stripe.Pivot.Y}) [{stripe.Top.FromX}-{stripe.Top.ToX}]";
-
     private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, Discriminator discriminator) =>
         discriminator is ExitBelow exitBelow ? stripe.CloseStripe(exitBelow)
         : [stripe];
 
     private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, ExitBelow discriminator)
     {
-        if (discriminator.Line.FromX < stripe.Top.FromX && discriminator.Line.ToX > stripe.Top.ToX) yield break;
-
-        if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
+        if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X) yield break;
+        else if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
         else if (discriminator.Line.FromX > stripe.Top.ToX) yield return stripe;
-        else if (discriminator.Line.FromX > stripe.Top.FromX && discriminator.Line.FromX > stripe.Pivot.X) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
-        else if (discriminator.Line.ToX < stripe.Top.ToX && discriminator.Line.ToX < stripe.Pivot.X) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
+        else if (discriminator.Line.FromX <= stripe.Top.ToX && discriminator.Line.FromX > stripe.Top.FromX) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
+        else if (discriminator.Line.ToX >= stripe.Top.FromX && discriminator.Line.ToX < stripe.Top.ToX) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
     }
 
     private static IEnumerable<Stripe> ToNewStripes(this Discriminator discriminator, IEnumerable<Stripe> existingStripes) => discriminator switch
@@ -191,17 +91,17 @@ static class Day09
 
     private static IEnumerable<Stripe> ToNewStripes(this EnterAt discriminator, IEnumerable<Stripe> existingStripes)
     {
-        Right top = discriminator.Line;
-        foreach (var stripeTop in existingStripes.Select(s => s.Top).Where(t => t.Y > top.Y))
+        Right top = new Right(discriminator.Line.Y, discriminator.Points.Min(p => p.X), discriminator.Points.Max(p => p.X));
+        foreach (var stripeTop in existingStripes.Select(s => s.Top).Where(t => t.Y >= top.Y))
         {
-            if (stripeTop.FromX < top.FromX && stripeTop.ToX >= top.FromX - 1) top = top with { FromX = top.FromX };
+            if (stripeTop.FromX < top.FromX && stripeTop.ToX >= top.FromX - 1) top = top with { FromX = stripeTop.FromX };
             if (stripeTop.FromX <= top.ToX + 1 && stripeTop.ToX > top.ToX) top = top with { ToX = stripeTop.ToX };
         }
 
         foreach (var point in discriminator.Points)
         {
-            if (point.X > top.FromX) yield return new Stripe(point, top with { ToX = point.X });
-            if (point.X < top.ToX) yield return new Stripe(point, top with { FromX = point.X });
+            if (point.X > top.FromX && point.X <= top.ToX) yield return new Stripe(point, top with { ToX = point.X });
+            if (point.X >= top.FromX && point.X <= top.ToX) yield return new Stripe(point, top with { FromX = point.X });
         }
     }
 
@@ -259,13 +159,6 @@ static class Day09
         Right r => new EnterAt(r, points),
         Left l => new ExitBelow(l.Reverse(), points),
         _ => throw new ArgumentException("Only horizontal lines can be converted to discriminators.")
-    };
-
-    private static bool Affects(this Discriminator discriminator, Point point) => discriminator switch
-    {
-        EnterAt enterAt => point.Y <= enterAt.Line.Y && point.X >= enterAt.Line.FromX && point.X <= enterAt.Line.ToX,
-        ExitBelow exitBelow => point.Y < exitBelow.Line.Y && point.X >= exitBelow.Line.FromX && point.X <= exitBelow.Line.ToX,
-        _ => false
     };
 
     private static Right Reverse(this Left line) => new Right(line.Y, line.ToX, line.FromX);
