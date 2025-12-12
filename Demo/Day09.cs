@@ -87,6 +87,14 @@ static class Day09
             }
             Console.WriteLine();
         }
+
+        Console.Write("      ");
+        for (int x = minX; x <= maxX; x++) Console.Write((x / 10) % 10);
+        Console.WriteLine();
+        Console.Write("      ");
+        for (int x = minX; x <= maxX; x++) Console.Write(x % 10);
+        Console.WriteLine();
+        Console.WriteLine("-------------------------------");
     }
 
     private static string ToLabel(this Discriminator discriminator) => discriminator switch
@@ -143,6 +151,10 @@ static class Day09
                 .Concat(stripes.SelectMany(stripe => stripe.CloseStripe(discriminator)))
                 .Distinct()
                 .ToList();
+
+            var y = discriminator.GetPoints().Max(p => p.Y);
+            var printableStripes = stripes.OrderBy(s => s.Top.FromX).ToList();
+            Console.WriteLine($"y={y,-3} Stripes: {string.Join(", ", printableStripes.Select(s => s.ToLabel()))}");
         }
 
         return maxArea;
