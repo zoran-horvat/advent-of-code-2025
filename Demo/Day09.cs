@@ -182,21 +182,21 @@ static class Day09
     {
         if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X)
         {
-            // Console.WriteLine($"    Removing stripe {stripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
+            Console.WriteLine($"    Removing stripe {stripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
             yield break;        // Discriminator removes pivot
         }
         else if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
         else if (discriminator.Line.FromX > stripe.Top.ToX) yield return stripe;
-        else if (discriminator.Line.FromX <= stripe.Top.ToX)
+        else if (discriminator.Line.FromX <= stripe.Top.ToX && discriminator.Line.FromX > stripe.Top.FromX)
         {
             var newStripe = stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
-            // Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
+            Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
             yield return newStripe;
         }
-        else if (discriminator.Line.ToX >= stripe.Top.FromX)
+        else if (discriminator.Line.ToX >= stripe.Top.FromX && discriminator.Line.ToX < stripe.Top.ToX)
         {
             var newStripe = stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
-            // Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
+            Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
             yield return newStripe;
         }
     }
