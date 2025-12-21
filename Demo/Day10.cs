@@ -18,29 +18,59 @@ static class Day10
     {
         var system = machine.ToEquations().Reduce();
         int buttonsCount = system.Equations[0].ButtonWeight.Length;
-        var buttonMaximums = system.GetButtonMaximums().Select(max => max * 20).ToArray();      // Requires optimal bounds calculation
+        var buttonMaximums = system.GetTightButtonMaximums();
+
         var currentMin = buttonMaximums.Sum() + 1;
-        return system.GetMinimumPresses(buttonsCount - 1, new int[buttonsCount], buttonMaximums, 0, ref currentMin);
+        var min = system.GetMinimumPresses(machine, buttonsCount - 1, new int[buttonsCount], buttonMaximums, 0, ref currentMin);
+
+        return min;
     }
 
-    private static int[] GetButtonMaximums(this EquationSystem equations)
+    private static int[] GetTightButtonMaximums(this EquationSystem system)
     {
-        var infinity = equations.GetMaximumPresses() + 1;
-        return Enumerable.Range(0, equations.Equations[0].ButtonWeight.Length)
-            .Select(i => equations.GetButtonMaximum(i, infinity))
-            .ToArray();   
+        int?[] maximums = new int?[system.Equations[0].ButtonWeight.Length];
+        bool changed = true;
+
+        while (changed)
+        {
+            changed = false;
+
+            for (int button = 0; button < maximums.Length; button++)
+            {
+                foreach (var eq in system.Equations)
+                {
+                    if (eq.ButtonWeight[button] == 0) continue;
+                    int? target = eq.Target;
+                    for (int otherButton = 0; otherButton < maximums.Length; otherButton++)
+                    {
+                        if (otherButton == button) continue;
+                        if (eq.ButtonWeight[otherButton] == 0) continue;
+                        if (Math.Sign(eq.ButtonWeight[otherButton]) == Math.Sign(eq.ButtonWeight[button])) continue;
+
+                        var otherMaximum = maximums[otherButton];
+                        if (otherMaximum is null)
+                        {
+                            target = null;
+                            break;
+                        }
+                        target -= eq.ButtonWeight[otherButton] * otherMaximum.Value;
+                    }
+
+                    if (target is null) continue;
+                    int candidate = Math.Max(target.Value / eq.ButtonWeight[button], 0);
+                    if (maximums[button] is null || candidate < maximums[button])
+                    {
+                        maximums[button] = candidate;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        
+        return maximums.Select(m => m ?? int.MaxValue).ToArray();
     }
 
-    private static int GetButtonMaximum(this EquationSystem system, int buttonIndex, int infinity) => 
-        system.Equations
-            .Where(eq => eq.ButtonWeight[buttonIndex] != 0)
-            .Where(eq => eq.ButtonWeight.All(w => w >= 0) || eq.ButtonWeight.All(w => w <= 0))
-            .Where(eq => eq.ButtonWeight.Any(w => w != 0))
-            .Select(eq => Math.Abs(eq.Target) / Math.Abs(eq.ButtonWeight[buttonIndex]))
-            .DefaultIfEmpty(infinity)
-            .Min();
-
-    private static int GetMinimumPresses(this EquationSystem equations, int buttonIndex, int[] presses, int[] buttonMaximums, int currentPresses, ref int currentMin)
+    private static int GetMinimumPresses(this EquationSystem equations, Machine machine, int buttonIndex, int[] presses, int[] buttonMaximums, int currentPresses, ref int currentMin)
     {
         var (min, max) = equations.GetRange(presses, buttonIndex, buttonMaximums[buttonIndex], currentPresses, currentMin);
         if (min is null || max is null) return currentMin;
@@ -49,7 +79,7 @@ static class Day10
         {
             presses[buttonIndex] = i;
             var newPresses = currentPresses + i;
-            var newMin = buttonIndex == 0 ? currentPresses + i : equations.GetMinimumPresses(buttonIndex - 1, presses, buttonMaximums, newPresses, ref currentMin);
+            var newMin = buttonIndex == 0 ? currentPresses + i : equations.GetMinimumPresses(machine, buttonIndex - 1, presses, buttonMaximums, newPresses, ref currentMin);
             presses[buttonIndex] = 0;
             
             currentMin = Math.Min(currentMin, newMin);
