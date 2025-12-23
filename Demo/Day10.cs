@@ -18,17 +18,84 @@ static class Day10
     {
         var system = machine.ToEquations().Reduce();
         int buttonsCount = system.Equations[0].ButtonWeight.Length;
-        var buttonMaximums = system.GetTightButtonMaximums();
 
-        var currentMin = buttonMaximums.Sum() + 1;
-        var min = system.GetMinimumPresses(machine, buttonsCount - 1, new int[buttonsCount], buttonMaximums, 0, ref currentMin);
-
+        var currentMin = system.ButtonMaximums.Sum() + 1;
+        var min = system.GetMinimumPresses(buttonsCount - 1, new int[buttonsCount], 0, ref currentMin);
         return min;
     }
 
-    private static int[] GetTightButtonMaximums(this EquationSystem system)
+    private static int GetMinimumPresses(this ReducedEquations system, int buttonIndex, int[] presses, int currentPresses, ref int currentMin)
     {
-        int?[] maximums = new int?[system.Equations[0].ButtonWeight.Length];
+        if (system.ButtonReductions[buttonIndex].Length == 0) return system.GetFreeVariableMinimumPresses(buttonIndex, presses, currentPresses, ref currentMin);
+
+        var actual = system.ButtonReductions[buttonIndex].Resolve(presses);
+        if (actual is null) return currentMin;
+
+        currentPresses += actual.Value;
+        if (buttonIndex == 0) return Math.Min(currentMin, currentPresses);
+
+        presses[buttonIndex] = actual.Value;
+        var newMin = system.GetMinimumPresses(buttonIndex - 1, presses, currentPresses, ref currentMin);
+        presses[buttonIndex] = 0;
+        return newMin;
+    }
+
+    private static int GetFreeVariableMinimumPresses(this ReducedEquations system, int buttonIndex, int[] presses, int currentPresses, ref int currentMin)
+    {
+        if (buttonIndex == 0) return currentMin;
+
+        var max = Math.Min(currentMin - currentPresses - 1, system.ButtonMaximums[buttonIndex]);
+        if (max < 0) return currentMin;
+
+        for (int i = 0; i <= Math.Min(max, currentMin - currentPresses - 1); i++)
+        {
+            presses[buttonIndex] = i;
+            var newPresses = currentPresses + i;
+            var newMin = system.GetMinimumPresses(buttonIndex - 1, presses, newPresses, ref currentMin);
+            presses[buttonIndex] = 0;
+            
+            currentMin = Math.Min(currentMin, newMin);
+        }
+
+        return currentMin;
+    }
+
+    private static int? Resolve(this Reduction[] buttonReductions, int[] presses)
+    {
+        int? first = buttonReductions[0].Resolve(presses);
+        if (first is null) return null;
+        if (buttonReductions.Length == 1) return first;
+
+        for (int i = 1; i < buttonReductions.Length; i++)
+        {
+            int? next = buttonReductions[i].Resolve(presses);
+            if (next is null || next != first) return null;
+        }
+
+        return first;
+    }
+
+    private static int? Resolve(this Reduction buttonReduction, int[] presses)
+    {
+        int remainingPresses = buttonReduction.Target;
+        foreach (var (index, factor) in buttonReduction.ButtonEffects) remainingPresses -= factor * presses[index];
+        if (remainingPresses % buttonReduction.ButtonWeight != 0) return null;
+        var actual = remainingPresses / buttonReduction.ButtonWeight;
+        if (actual < 0) return null;
+        return actual;
+    }
+
+    private static ReducedEquations Reduce(this EquationSystem system)
+    {
+        var equations = system.Equations.Reduce().ToArray();
+        var buttonReductions = equations.ToButtonReductions(equations[0].ButtonWeight.Length);
+        var buttonMaximums = equations.GetTightButtonMaximums();
+        return new ReducedEquations(equations, buttonReductions, buttonMaximums);
+    }
+
+    private static int[] GetTightButtonMaximums(this Equation[] system)
+    {
+        int?[] maximums = new int?[system[0].ButtonWeight.Length];
         bool changed = true;
 
         while (changed)
@@ -37,7 +104,7 @@ static class Day10
 
             for (int button = 0; button < maximums.Length; button++)
             {
-                foreach (var eq in system.Equations)
+                foreach (var eq in system)
                 {
                     if (eq.ButtonWeight[button] == 0) continue;
                     int? target = eq.Target;
@@ -66,76 +133,12 @@ static class Day10
                 }
             }
         }
-        
+
         return maximums.Select(m => m ?? int.MaxValue).ToArray();
     }
 
-    private static int GetMinimumPresses(this EquationSystem equations, Machine machine, int buttonIndex, int[] presses, int[] buttonMaximums, int currentPresses, ref int currentMin)
+    private static IEnumerable<Equation> Reduce(this Equation[] system)
     {
-        var (min, max) = equations.GetRange(presses, buttonIndex, buttonMaximums[buttonIndex], currentPresses, currentMin);
-        if (min is null || max is null) return currentMin;
-
-        for (int i = min.Value; i <= Math.Min(max.Value, currentMin - currentPresses - 1); i++)
-        {
-            presses[buttonIndex] = i;
-            var newPresses = currentPresses + i;
-            var newMin = buttonIndex == 0 ? currentPresses + i : equations.GetMinimumPresses(machine, buttonIndex - 1, presses, buttonMaximums, newPresses, ref currentMin);
-            presses[buttonIndex] = 0;
-            
-            currentMin = Math.Min(currentMin, newMin);
-            if (buttonIndex == 0) return currentMin;
-        }
-
-        return currentMin;
-    }
-
-    private static (int? min, int? max) GetRange(this EquationSystem system, int[] presses, int buttonIndex, int buttonMaximum, int currentPresses, int currentMin)
-    {
-        var (min, max) = (0, Math.Min(currentMin - currentPresses - 1, buttonMaximum));
-        if (system.Equations[buttonIndex].ButtonWeight[buttonIndex] != 0)
-        {
-            var equation = system.Equations[buttonIndex];
-            var remaining = equation.GetRemainingPresses(presses, buttonIndex);
-            if (remaining % equation.ButtonWeight[buttonIndex] != 0) return (null, null);
-
-            var actual = remaining / equation.ButtonWeight[buttonIndex];
-            if (actual < 0) return (null, null);
-            if (!system.IsValidExactValue(presses, buttonIndex, actual)) return (null, null);
-
-            return (actual, actual);
-        }
-
-        if (max < min) return (null, null);
-        if (min < 0 || max < 0) return (null, null);
-        return (min, max);
-    }
-
-    private static bool IsValidExactValue(this EquationSystem system, int[] presses, int buttonIndex, int exactValue) =>
-        system.Equations.All(equation => equation.IsValidExactValue(presses, buttonIndex, exactValue));
-
-    private static bool IsValidExactValue(this Equation equation, int[] presses, int buttonIndex, int exactValue)
-    {
-        if (equation.ButtonWeight[..buttonIndex].Any(w => w != 0)) return true;
-        int remaining = equation.GetRemainingPresses(presses, buttonIndex);
-        return remaining == equation.ButtonWeight[buttonIndex] * exactValue;
-    }
-
-    private static int GetRemainingPresses(this Equation equation, int[] presses, int buttonIndex)
-    {
-        int sum = 0;
-        for (int i = buttonIndex + 1; i < presses.Length; i++) sum += equation.ButtonWeight[i] * presses[i];
-        return equation.Target - sum;
-    }
-
-    private static int GetMaximumPresses(this EquationSystem system) =>
-        system.Equations
-            .Where(eq => eq.ButtonWeight.Any(w => w != 0))
-            .Where(eq => eq.ButtonWeight.All(w => w >= 0) || eq.ButtonWeight.All(w => w <= 0))
-            .Min(eq => Math.Abs(eq.Target));
-
-    private static EquationSystem Reduce(this EquationSystem equations)
-    {
-        var system = equations.Equations;
         int reductionsCount = Math.Min(system.Length - 1, system[0].ButtonWeight.Length - 1);
 
         for (int row = 0; row < reductionsCount; row++)
@@ -155,7 +158,38 @@ static class Day10
             }
         }
 
-        return new EquationSystem(system.MakeSquare().ToArray());
+        return system.MakeSquare();
+    }
+
+    private static Reduction[][] ToButtonReductions(this IEnumerable<Equation> equations, int buttonsCount)
+    {
+        var map = equations.Select(ToReduction)
+            .OfType<Reduction>()
+            .GroupBy(reduction => reduction.ButtonIndex)
+            .ToDictionary(group => group.Key, group => group.ToArray()!);
+
+        return Enumerable.Range(0, buttonsCount)
+            .Select(buttonIndex => map.GetValueOrDefault(buttonIndex, Array.Empty<Reduction>()))
+            .ToArray();
+    }
+
+    private static Reduction? ToReduction(this Equation equation)
+    {
+        int buttonIndex = 0;
+        while (buttonIndex < equation.ButtonWeight.Length && equation.ButtonWeight[buttonIndex] == 0) buttonIndex++;
+        if (buttonIndex >= equation.ButtonWeight.Length) return null;
+
+        var buttonWeight = equation.ButtonWeight[buttonIndex];
+        var target = equation.Target;
+        var buttonEffects = new List<(int buttonIndex, int factor)>();
+
+        for (int i = buttonIndex + 1; i < equation.ButtonWeight.Length; i++)
+        {
+            if (equation.ButtonWeight[i] == 0) continue;
+            buttonEffects.Add((i, equation.ButtonWeight[i]));
+        }
+
+        return new Reduction(buttonIndex, buttonWeight, target, buttonEffects.ToArray());
     }
 
     private static IEnumerable<Equation> MakeSquare(this IEnumerable<Equation> equations)
@@ -269,6 +303,10 @@ static class Day10
         public int GetHashCode([DisallowNull] Joltages obj) =>
             obj.Values.Aggregate(0, (acc, val) => HashCode.Combine(acc, val));
     }
+
+    record ReducedEquations(Equation[] Equations, Reduction[][] ButtonReductions, int[] ButtonMaximums);
+
+    record Reduction(int ButtonIndex, int ButtonWeight, int Target, (int buttonIndex, int factor)[] ButtonEffects);
 
     record EquationSystem(Equation[] Equations);
     record Equation(int[] ButtonWeight, int Target);
